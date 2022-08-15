@@ -18,6 +18,10 @@ B2_ACC_ID=
 B2_APP_KEY=
 B2_BUCKET_NAME=
 
+DELETE_LOGS_OLDER_THAN=60
+KEEP_ALL_BACKUPS_BEFORE=28
+KEEP_WEEKLY_BACKUPS_BEFORE=84
+
 TODAY_DATE="$(date +'%Y-%m-%d')"
 
 is_server_running() {
@@ -174,6 +178,61 @@ backup() {
     return 1
 }
 
+clean() {
+    # minecraft logs
+    cd ${MC_HOME}/logs || exit
+    for LOG_FILE in *
+    do
+        # delete minecraft logs older than 60 days
+        if [[ $LOG_FILE =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}).*\.log\.gz$ ]]; then
+            LOG_DATE=${BASH_REMATCH[1]}
+            DAYS_BEFORE=$(( (`date --date="00:00" +%s` - `date -d "$LOG_DATE" +%s`) / (24*3600) ))
+            if [ $DAYS_BEFORE -gt $DELETE_LOGS_OLDER_THAN ]; then
+                rm -f "$LOG_FILE"
+            fi
+        # compress chat logs that are not today
+        elif [[ $LOG_FILE =~ ([0-9]{4}-[0-9]{2}-[0-9]{2})(.*\.log)$ ]]; then
+            if [ $TODAY_DATE != $BASH_REMATCH[1] ]; then
+                gzip $LOG_FILE
+            fi
+        fi
+
+    done
+
+    # older backups on Backblaze
+    /usr/local/bin/b2 authorize-account "$B2_ACC_ID" "$B2_APP_KEY" >/dev/null
+
+    BACKUP_FILE_LIST=$(/usr/local/bin/b2 ls "$B2_BUCKET_NAME")
+    for FILE_NAME in $BACKUP_FILE_LIST
+    do
+        DELETE=0
+        if [[ $FILE_NAME =~ ([0-9]{4}-[0-9]{2}-[0-9]{2})_[a-z0-9.-_]*\.(zip|gz)$ ]]; then
+            FILE_DATE=${BASH_REMATCH[1]}
+            DAYS_BEFORE=$(( (`date +%s` - `date -d "$FILE_DATE" +%s`) / (24*3600) ))
+            if [ $DAYS_BEFORE -gt $KEEP_ALL_BACKUPS_BEFORE ]; then
+                DAY_OF_MONTH=`date --date=${BASH_REMATCH[1]} +%d`
+                if [ $DAYS_BEFORE -lt $KEEP_WEEKLY_BACKUPS_BEFORE ]; then
+                    # if day is NOT a Sunday
+                    if [ `date --date=${BASH_REMATCH[1]} +%u` -ne 7 ]; then
+                        DELETE=1
+                    fi
+                else
+                    # if day is NOT first Sunday of month
+                    if [ `cal $(date --date=${BASH_REMATCH[1]} +%m)  $(date --date=${BASH_REMATCH[1]} +%Y) | awk 'NF==7 && !/^Su/{print $1;exit}'` -ne $DAY_OF_MONTH ]; then
+                        DELETE=1
+                    fi
+                fi
+            fi
+        fi
+
+        if [ $DELETE -eq 1 ]; then
+            /usr/local/bin/b2 delete-file-version "$FILE_NAME" >/dev/null
+        fi
+    done
+
+    return 0
+}
+
 case "$1" in
 start)
     start_server
@@ -204,8 +263,12 @@ backup)
     backup
     exit $?
     ;;
+clean)
+    clean
+    exit $?
+    ;;
 *)
-    echo "Usage: ${0} {start|stop|stop-now|reload|attach|backup}"
+    echo "Usage: ${0} {start|stop|stop-now|reload|attach|backup|clean}"
     exit 2
     ;;
 esac
