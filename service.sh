@@ -188,6 +188,7 @@ clean() {
             LOG_DATE=${BASH_REMATCH[1]}
             DAYS_BEFORE=$(( (`date --date="00:00" +%s` - `date -d "$LOG_DATE" +%s`) / (24*3600) ))
             if [ $DAYS_BEFORE -gt $DELETE_LOGS_OLDER_THAN ]; then
+                echo "Deleting older log '$LOG_FILE'"
                 rm -f "$LOG_FILE"
             fi
         # compress chat logs that are not today
@@ -204,9 +205,15 @@ clean() {
     # older backups on Backblaze
     /usr/local/bin/b2 authorize-account "$B2_ACC_ID" "$B2_APP_KEY" >/dev/null
 
-    BACKUP_FILE_LIST=$(/usr/local/bin/b2 ls "$B2_BUCKET_NAME")
-    for FILE_NAME in $BACKUP_FILE_LIST
+    for ROW in $(/usr/local/bin/b2 ls "$B2_BUCKET_NAME" --json | jq -r '.[] | @base64')
     do
+        _jq() {
+            echo ${ROW} | base64 --decode | jq -r ${1}
+        }
+
+        FILE_ID=$(_jq '.fileId')
+        FILE_NAME=$(_jq '.fileName')
+
         DELETE=0
         if [[ $FILE_NAME =~ ([0-9]{4}-[0-9]{2}-[0-9]{2})_[a-z0-9.-_]*\.(zip|gz)$ ]]; then
             FILE_DATE=${BASH_REMATCH[1]}
@@ -228,7 +235,8 @@ clean() {
         fi
 
         if [ $DELETE -eq 1 ]; then
-            /usr/local/bin/b2 delete-file-version "$FILE_NAME" >/dev/null
+            echo "Deleting older backup '$FILE_NAME'"
+            /usr/local/bin/b2 delete-file-version "$FILE_NAME" "$FILE_ID">/dev/null
         fi
     done
 
