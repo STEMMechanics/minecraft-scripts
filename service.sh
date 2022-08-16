@@ -192,8 +192,10 @@ clean() {
             fi
         # compress chat logs that are not today
         elif [[ $LOG_FILE =~ ([0-9]{4}-[0-9]{2}-[0-9]{2})(.*\.log)$ ]]; then
-            if [ $TODAY_DATE != $BASH_REMATCH[1] ]; then
-                gzip $LOG_FILE
+            if [ $TODAY_DATE != ${BASH_REMATCH[1]} ]; then
+                if [ ! -f "$LOG_FILE.gz" ]; then
+                    gzip $LOG_FILE
+                fi
             fi
         fi
 
