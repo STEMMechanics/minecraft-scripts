@@ -261,6 +261,11 @@ restart)
     start_server
     exit $?
     ;;
+restart-now)
+    stop_server 30 "Restart"
+    start_server
+    exit $?
+    ;;
 reload)
     reload_server
     exit $?
@@ -278,7 +283,7 @@ clean)
     exit $?
     ;;
 *)
-    echo "Usage: ${0} {start|stop|stop-now|reload|attach|backup|clean}"
+    echo "Usage: ${0} {start|stop|stop-now|restart|restart-now|reload|attach|backup|clean}"
     exit 2
     ;;
 esac
