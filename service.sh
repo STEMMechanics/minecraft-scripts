@@ -35,11 +35,27 @@ mc_command() {
     return $?
 }
 
+test_user() {
+    if [ -f $TMUX_SOCKET ] && [ ! -O $TMUX_SOCKET ]; then
+        user="$(ls -ld /tmp/minecraft | awk '{print $3}')"
+        echo "Minecraft server is required to be run under the user '$user'"
+        return 1
+    fi
+
+    return $?
+}
+
 start_server() {
     if is_server_running; then
         echo "Server already running"
         return 1
     fi
+
+    test_user
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
     echo "Starting minecraft server in tmux session"
     tmux -S $TMUX_SOCKET new -c $MC_HOME -s $TMUX_SESSION -d "$MC_START_CMD"
     chmod g+rw $TMUX_SOCKET
@@ -57,6 +73,11 @@ start_server() {
 stop_server() {
     if ! is_server_running; then
         echo "Server is not running!"
+        return 1
+    fi
+
+    test_user
+    if [ $? -ne 0 ]; then
         return 1
     fi
 
