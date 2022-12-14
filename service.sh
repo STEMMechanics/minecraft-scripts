@@ -1,14 +1,17 @@
 #!/bin/bash
 # STEMMechanics Minecraft service script, running throught tmux
 # Based off https://github.com/moonlight200/minecraft-tmux-service
+# updated to support the start/restarts scripts from 
+# https://gist.github.com/Prof-Bloodstone/6367eb4016eaf9d1646a88772cdbbac5
 
 # Minecraft Start Command flags require Oracle Graalvm Java Enterprise
 # https://www.oracle.com/downloads/graalvm-downloads.html
 
 MC_HOME="/var/minecraft"
 MC_PID_FILE="$MC_HOME/minecraft-server.pid"
-MC_START_CMD="java -server -Xms8G -Xmx8G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+UnlockDiagnosticVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true -XX:+EnableJVMCIProduct -XX:+EnableJVMCI -XX:+UseJVMCICompiler -XX:+EagerJVMCI -XX:+UseStringDeduplication -XX:+UseFastUnorderedTimeStamps -XX:+UseAES -XX:+UseAESIntrinsics -XX:AllocatePrefetchStyle=1 -XX:+UseLoopPredicate -XX:+RangeCheckElimination -XX:+EliminateLocks -XX:+DoEscapeAnalysis -XX:+UseCodeCacheFlushing -XX:+UseFastJNIAccessors -XX:+OptimizeStringConcat -XX:+UseCompressedOops -XX:+UseThreadPriorities -XX:+OmitStackTraceInFastThrow -XX:+TrustFinalNonStaticFields -XX:ThreadPriorityPolicy=1 -XX:+UseInlineCaches -XX:+RewriteBytecodes -XX:+RewriteFrequentPairs -XX:+UseNUMA -XX:-DontCompileHugeMethods -XX:+UseCMoveUnconditionally -XX:+UseFPUForSpilling -XX:+UseVectorCmov -XX:+UseXMMForArrayCopy -Dfile.encoding=UTF-8 -Djdk.nio.maxCachedBufferSize=262144 -Dgraal.TuneInlinerExploration=1 -Dgraal.CompilerConfiguration=enterprise -Dgraal.UsePriorityInlining=true -Dgraal.Vectorization=true -Dgraal.OptDuplication=true -Dgraal.DetectInvertedLoopsAsCounted=true -Dgraal.LoopInversion=true -Dgraal.VectorizeHashes=true -Dgraal.EnterprisePartialUnroll=true -Dgraal.VectorizeSIMD=true -Dgraal.StripMineNonCountedLoops=true -Dgraal.SpeculativeGuardMovement=true -Dgraal.InfeasiblePathCorrelation=true --add-modules jdk.incubator.vector -jar server.jar nogui"
-SERVER_NAME=
+MC_START_CMD="./start.sh"
+MC_STOP_FILE="$MC_HOME/stop.tmp"
+SERVER_NAME=froels
 BACKUP_DIR="/var/minecraft/backups"
 
 TMUX_SOCKET="/tmp/minecraft"
@@ -23,6 +26,7 @@ KEEP_ALL_BACKUPS_BEFORE=28
 KEEP_WEEKLY_BACKUPS_BEFORE=84
 
 TODAY_DATE="$(date +'%Y-%m-%d')"
+TODAY_DATE_TIME="$(date +'%Y-%m-%d_%H-%M-%S')"
 
 is_server_running() {
     tmux -S $TMUX_SOCKET has -t $TMUX_SESSION > /dev/null 2>&1
@@ -36,9 +40,9 @@ mc_command() {
 }
 
 test_user() {
-    if [ -f $TMUX_SOCKET ] && [ ! -O $TMUX_SOCKET ]; then
+    if [ -e /tmp/minecraft ] && [ ! -O $TMUX_SOCKET ]; then
         user="$(ls -ld /tmp/minecraft | awk '{print $3}')"
-        echo "Minecraft server is required to be run under the user '$user'"
+        echo "This script is required to be run under the account '$user' to match the tmux session"
         return 1
     fi
 
@@ -112,6 +116,9 @@ stop_server() {
         delay=$((delay-10))
     done
 
+    # Create stop file
+    # echo "1" > $MC_STOP_FILE
+
     # Issue shutdown
     echo "Kicking players"
     mc_command "kickall"
@@ -168,7 +175,7 @@ backup() {
         echo "Zipping server files"
 
         cd ${MC_HOME} || exit
-        zip -q -r "${BACKUP_DIR}/${TODAY_DATE}_${SERVER_NAME}.zip" . -x ./backups**\* ./cache**\* ./config**\* ./crash-reports**\* ./libraries**\* ./logs**\* ./versions/**\*
+        zip -q -r "${BACKUP_DIR}/${TODAY_DATE_TIME}_${SERVER_NAME}.zip" . -x ./backups**\* ./cache**\* ./config**\* ./crash-reports**\* ./libraries**\* ./logs**\* ./versions/**\*
 
         if is_server_running; then
             mc_command "save-on"
